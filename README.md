@@ -17,8 +17,11 @@ The data set, originally collected by Steinmetz, includes 18 sessions that provi
 - Analysis of homogeneity and heterogeneity across sessions and mice.
 
 ### Part 2: Data Integration
+
+![Patterns in Feedback](src/images/unnamed-chunk-9-1.png)
 - Identification of shared patterns across sessions.
 - Addressing differences between sessions to enhance prediction performance.
+![Clusters with feedback](src/images/unnamed-chunk-12-1.png)
 
 ### Part 3: Predictive Modeling
 - Development of a model to predict trial outcomes.
