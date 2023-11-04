@@ -11,7 +11,7 @@ The data set, originally collected by Steinmetz, includes 18 sessions that provi
 
 ### Part 1: Exploratory Data Analysis
 
-![Spike Activity Per Brain Area](images/unnamed-chunk-7-2)
+![Spike Activity Per Brain Area](src/images/unnamed-chunk-7-2)
 - Examination of neural activities during trials.
 - Investigation of changes across trials.
 - Analysis of homogeneity and heterogeneity across sessions and mice.
