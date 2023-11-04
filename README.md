@@ -10,6 +10,8 @@ This project investigates the intricate relationship between neural activity and
 The data set, originally collected by Steinmetz, includes 18 sessions that provide a comprehensive view of the neural activity within the visual cortex of mice. The analysis is divided into three main parts:
 
 ### Part 1: Exploratory Data Analysis
+
+![Spike Activity Per Brain Area](images/unnamed-chunk-7-2)
 - Examination of neural activities during trials.
 - Investigation of changes across trials.
 - Analysis of homogeneity and heterogeneity across sessions and mice.
