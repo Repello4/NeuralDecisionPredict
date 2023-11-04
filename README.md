@@ -32,18 +32,15 @@ The results from this study are expected to contribute to a better understanding
 
 ## Repository Contents
 - `Data files`: Contains the raw data and processed data sets.
-- `Scripts`: Includes all the code used for analysis and modeling.
-- `Figures`: All generated charts and visualizations from the analysis.
-- `Documentation`: Detailed explanation of methods and findings.
+- `Src`: Includes all the code used for analysis and modeling.
+- `Images`: All generated charts and visualizations from the analysis.
+- `Outputs`: Detailed explanation of methods and findings.
 
 ## Usage
-To replicate the analysis or to apply the predictive model to new data, follow the instructions provided in the `scripts` directory.
+To replicate the analysis or to apply the predictive model to new data, follow the instructions provided in the `src` directory.
 
 ## Contributing
 Contributions to this project are welcome. Please refer to the contributing guidelines before making pull requests.
-
-## License
-This project is licensed under the MIT License - see the `LICENSE` file for details.
 
 ## Acknowledgments
 - Special thanks to Steinmetz for providing the initial data set.
