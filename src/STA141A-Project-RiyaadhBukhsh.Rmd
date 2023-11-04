@@ -8,16 +8,12 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-
+knitr::opts_chunk$set(echo = TRUE, fig.path='images/', dev='png')
 
 library(tidyverse)
 library(ggplot2)
 library(dplyr)
-
 library(cluster)
-
-
 library(kernlab)
 library(caret)
 
@@ -75,7 +71,7 @@ session=list()
 
 #Reading the session files into a list of 18 elements
 for(i in 1:18){
-  session[[i]]=readRDS(paste('session',i,'.rds',sep=''))
+  session[[i]]=readRDS(paste('../data/mouse_data/session',i,'.rds',sep=''))
 
   
 }
@@ -503,7 +499,7 @@ testData=list()
 
 #Reading the session files into a list of 18 elements
 for(i in 1:2){
-  testData[[i]]=readRDS(paste('test',i,'.rds',sep=''))
+  testData[[i]]=readRDS(paste('../data/mouse_data/test',i,'.rds',sep=''))
 
   
 }
