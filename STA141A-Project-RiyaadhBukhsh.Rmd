@@ -1,0 +1,674 @@
+---
+title: "Exploring the Relationship between Neural Activity and Feedback Types in Mouse Decision-Making"
+author: "Riyaadh Bukhsh 921470997 STA141A"
+date: "2023-06-10"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+
+library(cluster)
+
+
+library(kernlab)
+library(caret)
+
+```
+
+# Abstract:
+
+This project aims to analyze a subset of data from experiments conducted on mice, specifically focusing on the neural activity in their visual cortex during decision-making tasks. The objective is to build a predictive model that can accurately predict the outcome of each trial based on the neural activity and stimuli information. Through exploratory data analysis, data integration, and model training, this project seeks to gain insights into the relationship between neural activity and decision-making in mice, ultimately contributing to a better understanding of the experimental data and potentially providing valuable insights for future studies in this field.
+
+# Introduction
+
+This project focuses on the analysis of a subset of data collected by Steinmetz et al. (2019) from experiments conducted on mice. The study involved 10 mice over 39 sessions, where visual stimuli were presented to the mice, and they had to make decisions based on the stimuli. The neural activity in the mice's visual cortex was recorded in the form of spike trains during the trials.
+
+The main objective of this project is to build a predictive model that can predict the outcome of each trial using the neural activity data and stimuli information. The project is divided into three parts.
+
+In Part 1, I perform exploratory data analysis to understand the characteristics of the data set and explore the neural activities during the trials. I also investigate the changes across trials and examine the homogeneity and heterogeneity across sessions and mice.
+
+In Part 2, I propose a data integration approach based on the findings from Part 1. This approach aims to combine data across trials by identifying shared patterns across sessions and addressing any differences between sessions. The goal is to enhance the prediction performance in the subsequent part.
+
+In Part 3, I build a prediction model using the integrated data to predict the outcome of the trials. The model's performance will be evaluated on two test sets randomly selected from Session 1 and Session 18, respectively.
+
+By conducting this analysis and building a predictive model, I aim to gain insights into the relationship between neural activity and decision-making in mice. The results obtained will contribute to a better understanding of the experimental data and potentially provide valuable insights for future studies in this field.
+
+
+The original subset of data collected by Steinmetz encompasses various essential variables, providing a comprehensive picture of the neural activity within the visual cortex. The data consists of 18 sessions, with each session dedicated to a specific mouse and a distinct brain area within the visual cortex. For instance, session one focuses on neurons in areas ACA, CA3, DG, LS, MOs, SUB, VISp, and the root region.
+
+Within each session, multiple trials are conducted, capturing crucial information related to decision-making. These trials include the following variables:
+
+1.  feedback_type: Indicates the type of feedback received, denoted as 1 for success and -1 for failure.
+
+2.  contrast_left: Represents the contrast level of the left stimulus presented during the trials.
+
+3.  contrast_right: Signifies the contrast level of the right stimulus presented during the trials.
+
+4.  time: Corresponds to the center points of the time bins used for organizing the neuron spikes.
+
+5.  spks: Reflects the number of spikes recorded for each neuron in the visual cortex, categorized into time bins defined by the 'time' variable.
+
+6.  brain_area: Identifies the specific brain area where each neuron is located within the visual cortex.
+
+These variables collectively provide crucial insights into the neural dynamics and decision-making processes in the visual cortex. Analyzing this rich data set opens up avenues for understanding the intricate workings of the brain and its role in perception and decision-making.
+
+# Exploratory Analysis
+
+To begin the data analysis process, the first step involves creating a comprehensive data frame that contains all the important information regarding the mouse data. At first, I will import the data into a list fully conscious about the drawbacks following, and although dealing with lists can present some challenges, I will overcome this limitation by transforming the list of sessions into a structured data frame.
+
+By converting the data into a data frame format, I can effectively organize and manipulate the information, enabling us to perform in-depth analyses and extract valuable insights. This approach enhances the overall accessibility and usability of the data, facilitating further exploration and modeling tasks.
+
+**Aggregating the 18 sessions into a Comprehensive Data set**
+
+```{r}
+
+#Allocating session
+session=list()
+
+#Reading the session files into a list of 18 elements
+for(i in 1:18){
+  session[[i]]=readRDS(paste('session',i,'.rds',sep=''))
+
+  
+}
+```
+
+**Transforming sessions into a accessible data frame in order to simplify data manipulation**
+
+To ensure data integrity and maintain the distinct dimensions of spike data and general mouse information, I will refrain from combining them at this stage.
+
+```{r}
+
+#Allocating mouse data frame
+mouseData = data.frame()
+
+#To iterate through the sessions
+for(i in 1:18){
+  
+  #Temporary variable to store the allocated information for each session
+  x = cbind(session[[i]]$contrast_left,session[[i]]$contrast_right,rep(i,length(session[[i]]$contrast_left)),session[[i]]$mouse_name,length(session[[i]]$brain_area),length(unique(session[[i]]$brain_area)),length(session[[i]]$spks),session[[i]]$feedback_type)
+ 
+  #Binding the rows to the data frame
+   mouseData = rbind(mouseData,x)
+  
+}
+
+
+
+#Names of the data frame
+colnames(mouseData) = c("contrast_left","contrast_right", "session","mouse","number_of_neurons","brain_area","number_of_trials", "feedback_type")
+
+
+##Checking the data frame
+head(mouseData)
+
+# To check the total number of trials
+totalTrials = 0
+
+for(i in 1:18){
+  
+  
+  num = length(session[[i]]$feedback_type)
+  totalTrials = totalTrials + num
+}
+
+#Confirming the dimensions (rows) are equivalent to the number of total trials
+
+dim(mouseData)
+
+
+#Converting some data to factors for easier data analysis and manipulation
+mouseData$session = as.factor(mouseData$session)
+mouseData$mouse = as.factor(mouseData$mouse)
+mouseData$feedback_type = as.factor(mouseData$feedback_type)
+mouseData$brain_area = as.numeric(mouseData$brain_area)
+
+head(mouseData)
+
+```
+
+
+**Distribution of Measured Brain Areas**
+
+
+To better understand the coverage of brain areas in the data set, I examine the distribution of distinct brain areas that were measured during the experiments. This information is important for referencing the number of spikes per trial/session and provides insights into the spatial extent of the recorded neural activity.
+
+```{r}
+
+
+mouseData %>% select(session,mouse,brain_area) %>% group_by(session,brain_area,mouse) %>% summarise("Number of brain areas" = n()) %>% ggplot(aes(x = session, y = brain_area, fill = mouse)) + geom_bar(stat = "identity")
+```
+
+
+
+
+**Manipulate Data Function**
+
+Creating a function that aggregates the spike data in sessions and stores them into a data frame
+
+The "manipulateData" function is designed to aggregate the spike data within each session and store it in a data frame. It takes a list (referred to as session[i]) as input and extracts the spike data while summing across the rows, excluding the time bin factor.
+
+```{r}
+
+##Takes an input of a list (AKA session[[i]]), and extracts out the spike data  and sums across the rows, excluding the time bin factor.
+manipulateData<-function(data,sessionNum){
+  
+  
+  #Number of trials for each session
+  trial_nums = NULL
+  
+  #Allocating variables
+  brain_area<-data$brain_area
+  spks<-cbind(brain_area,as.data.frame(sapply(data$spks,rowSums)))
+  spks<-spks %>% group_by(brain_area) %>% summarise(across(everything(), sum))
+  
+  
+  #Pivoting the data frame
+  proper <- tidyr::pivot_longer(spks, cols = starts_with("V"), names_to = "Trial", values_to = "Spikes")
+
+
+  
+trial_numbers <- as.numeric(sub("V", "", grep("^V\\d+$", names(spks), value = TRUE)))
+
+# Get the column names starting with "V" and extract the numeric part
+trial_nums<-rep(trial_numbers,dim(proper %>% distinct(brain_area))[1])
+proper$Trial<-c(trial_nums)
+
+
+
+
+proper$session<-sessionNum
+
+return(proper)
+  
+}
+```
+
+
+
+**Creating the data frame for spikes**
+
+```{r}
+
+
+#Allocating the spike data frame
+totalSpikeData<-NULL
+
+for(i in 1:18){
+  
+  #Place holder for the spike data
+  tempData <-manipulateData(session[[i]],i)
+  
+  
+  #binding it to the data frame
+  totalSpikeData<- rbind(totalSpikeData,tempData)
+}
+
+
+#Checking dimensions
+dim(totalSpikeData)
+
+
+#Confirming number of rows is correct for the newly created data frame
+sum((mouseData %>% distinct(brain_area,number_of_trials)%>% pull(brain_area) %>% as.numeric())* (mouseData %>% distinct(brain_area,number_of_trials)%>% pull(number_of_trials) %>% as.numeric()))
+
+```
+
+**Visualizations for spike activity per session**
+
+By grouping the total number of spikes in each trial and visualizing the data using a line graph, I can gain insights into the spike activity per session. This approach allows us to understand the ranges and variations in spike counts across the trials.
+
+Upon examining the graph, I observe that some sessions have higher total spike counts compared to others. This difference could be attributed to factors such as the involvement of different mice or the application of more neuron readers to specific brain areas within the cortex. However, our main focus is on identifying differences in trends and fluctuations. Upon closer examination, I notice that some mice experience fatigue, leading to fluctuations in their total spike counts, while others maintain a more consistent average.
+
+Despite the variations, I can observe that there are similarities in spike trends across sessions, suggesting common underlying patterns or dynamics in the neural activity.
+
+```{r}
+
+#Session numbers for a random sampling method (removing bias)
+sessionNumbers<-1:18
+
+
+##Selecting Random sessions to plot and see association between number of spikes and Trial number
+for(i in sample(sessionNumbers,6,replace = F)){
+
+print(ggplot(totalSpikeData %>% filter(session == i) %>% group_by(Trial) %>% summarise(AverageSpikes = mean(Spikes),TotalSpikes = sum(Spikes),FiringRate = sum(TotalSpikes)/734),aes(x = Trial,y = TotalSpikes))+geom_line()+labs(y = "Total Number of Spikes",x = "Trial Number",title = paste("session",i)))
+}
+
+```
+
+
+**Analyzing Spike Activity Across Different Brain Areas**
+
+To explore the spike activity per brain area, I select arbitrary sessions to analyze the trends. This approach helps eliminate bias and allows us to observe patterns in neural activity across different brain areas.
+
+By examining the spike activity in these sessions, I can identify how neurons in specific brain areas respond to the stimuli presented during the trials. This analysis provides insights into the functional properties and information processing capabilities of different regions within the visual cortex.
+
+By considering multiple sessions and brain areas, I can gain a more comprehensive understanding of the neural dynamics and potentially uncover common patterns or variations in spike activity across different experimental conditions.
+```{r}
+for(i in sample(sessionNumbers,5,replace = F)){
+  
+  print(ggplot(totalSpikeData %>% filter(session == i),aes(x = Trial,y = Spikes,color = brain_area))+ geom_line()+labs(y = "Total Number of Spikes Per Brain Area",x = "Trial Number",title = paste("session",i)))
+
+  
+}
+
+```
+
+
+
+# Data Integration
+
+In the Data Integration phase, I leverage the insights gained from Part 1 to develop an approach for combining data across trials. The main objective is to extract shared patterns across sessions and address the differences between sessions, enabling us to borrow information and improve the prediction performance in Part 3.
+
+To achieve this, I employ two strategies:
+
+Extracting Shared Patterns: I identify common patterns and trends that exist across multiple sessions. By identifying these shared features, I can capture the underlying patterns that contribute to the neural activity during trials.
+
+Addressing Session Differences: I take into account the variations between sessions, such as differences in brain areas or spike activity, feedback type, etc. By addressing these session-specific factors, I can account for potential biases and ensure a more robust and accurate prediction model.
+
+
+**I will now perform some data manipulation in order to combine the spike data with the mouse data**
+
+```{r}
+##Summarizing the spike data in order to merge it with the mouse data
+summarisedSpikeData<- totalSpikeData %>%  group_by(session,Trial) %>% summarise(spikes = sum(Spikes))
+
+
+perfectMouseData<-cbind(mouseData,summarisedSpikeData[-1])
+
+
+
+##Creating the perfect mouse data.
+head(perfectMouseData,20)
+
+```
+
+To analyze the distribution of feedback types (success or failure) across sessions and identify any consistent patterns or trends, I utilized bar charts. These charts visually represented the distribution of feedback types across sessions, providing insights into the relationship between sessions and feedback outcomes.
+
+I generated two bar charts for this analysis. The first chart displayed the absolute counts of success and failure without any scaling. This allowed me to observe the raw differences in the total success-to-failure ratio across sessions. By examining this chart, I could identify sessions with notable variations in the distribution of feedback types.
+
+To gain a better understanding of the proportional differences between sessions, I created a second bar chart with scaling. This chart allowed me to compare the proportions of success and failure across sessions, normalizing the data and enabling a more direct comparison. By visualizing the scaled proportions, I could identify any consistent patterns or trends in the distribution of feedback types across sessions.
+
+## Shared Patterns Across Sessions
+
+```{r}
+
+
+
+
+##Total counts data set
+feedback_counts <- perfectMouseData %>%
+  group_by(session, feedback_type) %>%
+  summarise(count = n()) %>% group_by(session) %>% mutate(totals = sum(count))
+
+#Feedback proportions data set
+feedback_proportions <- perfectMouseData %>%
+  group_by(session, feedback_type) %>%
+  summarise(count = n()) %>% mutate(percentage = count/sum(count))
+
+
+##Total counts of feedback
+total_counts = feedback_counts %>% group_by(session) %>% summarise(total = sum(count))
+
+##Average feedback for success
+average_rate <- feedback_proportions %>%filter(feedback_type ==1) %>% pull(percentage) %>% mean()
+
+
+
+feedback_counts 
+
+
+
+ggplot(feedback_counts, aes(x = session, y = count, fill = feedback_type)) +
+  geom_bar(stat = "identity") + geom_text(aes(label = totals),vjust = -.5,color = "black")+ scale_fill_manual(values = c("1" = "black", "-1" = "red")) + labs(x = "Session", y = "Count", fill = "Feedback Type") + ggtitle("Distribution of Feedback Types Across Sessions")
+
+
+
+ggplot(feedback_proportions, aes(x = session, y = percentage, fill = feedback_type)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("1" = "black", "-1" = "red")) + geom_hline(yintercept = average_rate, linetype = "dashed", color = "yellow",size = .7)+
+  labs(x = "Session", y = "Count", fill = "Feedback Type") +
+  ggtitle("Distribution of Feedbacks Across Sessions")
+```
+
+**Exploring the Relationship Between Contrast Levels and Feedback Type**
+
+In this analysis, I delve into the relationship between the contrast levels (contrast_left and contrast_right) and the feedback type across sessions. Our aim is to investigate whether certain combinations of contrast levels consistently result in success or failure.
+
+By examining the data from various sessions, I can identify patterns and trends that shed light on the influence of contrast levels on the feedback outcomes. Specifically, I assess how different combinations of contrast levels are associated with the feedback types, which are categorized as success (1) or failure (-1).
+
+This exploration provides valuable insights into the relationship between visual stimuli (represented by contrast levels) and the resulting feedback. By understanding the consistent associations between specific contrast combinations and success/failure outcomes, I can gain a deeper understanding of the decision-making process of the mice during the trials.
+
+
+Upon analyzing the data, I observe a significant portion of trials with contrast levels of (0, 0), indicating the absence of visual stimuli. Within this contrast level, I notice a higher occurrence of success feedback compared to failures. This finding suggests that the mice demonstrate an understanding of the absence of stimuli and refrain from moving the wheel, resulting in successful outcomes. Other contrast levels seem to be distributed fairly.
+
+```{r}
+
+
+
+
+##Distribution of contrast varieties across all sessions
+contrastLevels <-  perfectMouseData %>% group_by(contrast_left,contrast_right) %>% summarize(counts = n()) 
+
+
+##Distribution of contrast varieties across all sessions with feedback
+contrastLevelsByFeedback = perfectMouseData %>% group_by(contrast_left,contrast_right,feedback_type) %>% summarize(counts = n()) 
+
+
+
+
+
+
+##Plots
+
+##Counts of various Contrast Levels for trials
+ggplot(contrastLevels, aes(x = contrast_left, y = contrast_right,size = counts/100,label = counts)) +
+  geom_point()+geom_text(size = 3, vjust = -1.2)
+
+## Counts of trials depending on Contrast Levels faceted by feedback type
+ggplot(contrastLevelsByFeedback, aes(x = contrast_left, y = contrast_right,size = counts/100,label = counts,color = feedback_type)) +
+  geom_point()+geom_text(size = 3, vjust = -1.2)+facet_grid(~feedback_type)
+```
+
+**Feedback Success Efficiency Between Mice and Sessions**
+
+In this analysis, I examine the feedback success efficiency across different mice and sessions. By investigating the variations in success rates, I can identify potential differences in performance among mice and sessions.
+
+Upon examining the data, I observe that Lederberg exhibits a higher success rates compared to others. This variation suggests that individual mice may have different cognitive abilities or learning strategies, leading to variations in their decision-making and overall success in the trials.
+
+```{r}
+perfectMouseData %>% group_by(mouse) %>%summarise(DescisionMaking = sum(feedback_type == 1)/n()) 
+
+test = perfectMouseData %>% group_by(mouse,session) %>%summarise(DescisionMakingEfficiency = sum(feedback_type == 1)/n()) 
+
+ggplot(test, aes(x = session, y = DescisionMakingEfficiency, fill = mouse)) +geom_bar(stat = "identity", position = "dodge") +labs(x = "Session", y = "Decision-Making Efficiency", fill = "Mouse")
+
+
+
+ggplot(test, aes(x = mouse, y = DescisionMakingEfficiency, fill = mouse)) +geom_bar(stat = "identity", position = "dodge") +labs(x = "Session", y = "Decision-Making Efficiency", fill = "Mouse")
+
+
+
+
+
+```
+
+
+
+**Clustering with k = 2**
+
+
+To gain further insights into the relationship between feedback types, contrast levels, and the total number of spikes, I perform clustering analysis on the data. By grouping similar data points together, clustering allows us to identify patterns and potential correlations among these variables.
+
+In our analysis, I use the k-means algorithm with k=2 to represent the two feedback types. By clustering the data points based on the contrast levels and the total number of spikes, I aim to identify any discernible patterns or associations between these variables and the feedback types.
+
+Upon examining the clustering results, I can observe potential patterns emerging. This suggests that there may be correlations between the feedback types and the contrast levels as well as the total number of spikes. It is important to note that further analysis and statistical testing are necessary to validate these assumptions and explore the strength and significance of these relationships.
+
+```{r}
+
+
+clusterData <-NULL
+clusterDF<- perfectMouseData %>% select(contrast_left,contrast_right,spikes)
+
+clusterData<- kmeans(clusterDF,2)
+
+numberoftrials<-1:5081
+
+clusterDF %>% mutate(cluster = clusterData$cluster) %>%
+  ggplot(aes(y=spikes, x=numberoftrials, color = as.factor(cluster))) + 
+  geom_point()
+
+```
+
+
+
+
+# Predictive Modeling
+
+The choice of logistic regression as the preferred method for prediction modeling in this project is driven by several key factors.
+
+Firstly, logistic regression is well-suited for binary classification tasks, making it an appropriate approach for predicting the feedback types (success or failure) for each trial. By estimating the probability of a specific feedback type based on the given predictors, logistic regression enables us to make informed predictions.
+
+Additionally, logistic regression offers the advantage of interpret ability. The coefficients associated with each predictor provide insights into the influence and direction of their effects on the outcome. This interpret ability enhances our understanding of the relationship between the neural activity data and the feedback types.
+
+Moreover, logistic regression is effective in handling moderate-sized data sets. Given our 18 sessions and a subset of trials, logistic regression can deliver reliable predictions without imposing excessive computational demands. Its robustness to outliers and ability to accommodate col-linearity between predictors further contribute to its suitability for our analysis.
+
+```{r}
+
+
+#Changing the variables to factors for the predictive model
+perfectMouseData$contrast_left<-as.factor(as.character(perfectMouseData$contrast_left))
+perfectMouseData$contrast_right<-as.factor(as.character(perfectMouseData$contrast_right))
+
+
+##Filtering the data to train by 
+trainData<-perfectMouseData %>% filter(session %in% 2:17)
+testData<-perfectMouseData %>% filter(session %in% c(1,18)) 
+
+
+
+print('Train Data:\n')
+head(trainData)
+print('Test Data: \n')
+head(testData)
+
+
+
+summary(trainData)
+
+
+## The prediction model, using logistic regression
+model = glm(feedback_type~contrast_left+contrast_right+spikes,family = 'binomial',trainData)
+
+
+summary(model)
+
+
+
+predictions<-as.data.frame(predict(model, testData))
+predictionsFact<- as.factor(ifelse(predictions>0.8,1,-1))
+
+
+
+
+
+
+matrix<- confusionMatrix(testData$feedback,predictionsFact)
+
+
+matrix$table
+
+
+##Misclassification Rate for the predictive Model
+1-sum(diag(matrix$table)/sum(matrix$table))
+
+```
+
+
+Based on our evaluation, the prediction model demonstrates promising performance, yielding a relatively low misclassification rate of 0.27. This indicates that the model is able to accurately predict the feedback types for the given trials in the data set.
+
+
+# Prediction Performance On Test Sets
+
+```{r}
+testData=list()
+
+#Reading the session files into a list of 18 elements
+for(i in 1:2){
+  testData[[i]]=readRDS(paste('test',i,'.rds',sep=''))
+
+  
+}
+
+```
+
+```{r}
+testMouseData = data.frame()
+
+#To iterate through the sessions
+for(i in 1:2){
+  
+  #Temporary variable to store the allocated information for each session
+  x = cbind(testData[[i]]$contrast_left,testData[[i]]$contrast_right,rep(i,length(testData[[i]]$contrast_left)),testData[[i]]$mouse_name,length(testData[[i]]$brain_area),length(unique(testData[[i]]$brain_area)),length(testData[[i]]$spks),testData[[i]]$feedback_type)
+ 
+  #Binding the rows to the data frame
+   testMouseData = rbind(testMouseData,x)
+  
+}
+#Names of the data frame
+colnames(testMouseData) = c("contrast_left","contrast_right", "session","mouse","number_of_neurons","brain_area","number_of_trials", "feedback_type")
+
+
+##Checking the data frame
+head(testMouseData)
+
+```
+
+```{r}
+##Extracting the spike data
+
+testSpikeData<-NULL
+
+for(i in 1:2){
+  
+  #Place holder for the spike data
+  tempData <-manipulateData(testData[[i]],i)
+  
+  
+  #binding it to the data frame
+  testSpikeData<- rbind(testSpikeData,tempData)
+}
+
+head(testSpikeData)
+```
+
+```{r}
+##Summarizing the spike data in order to merge it with the mouse data
+summarisedSpikeData<- testSpikeData %>%  group_by(session,Trial) %>% summarise(spikes = sum(Spikes))
+finalTestMouseData<-cbind(testMouseData,summarisedSpikeData[-1])
+
+##Creating the perfect mouse data.
+head(finalTestMouseData,20)
+
+
+
+
+```
+
+I am splitting the data into two test sessions, to evaluate the accuracy of the prediction model. 
+
+**Test Data 1**
+
+```{r}
+## This experiment is for test data 1
+## The prediction model, using logistic regression 
+##From the trained data
+summary(model)
+
+
+
+testDataPredictions<-as.data.frame(predict(model, (finalTestMouseData %>% filter(session == 1))))
+predictionsFact<- as.factor(ifelse(testDataPredictions>0.5,1,-1))
+
+
+predictionsFact
+
+testData1 <-finalTestMouseData %>%  filter(session == 1)
+
+matrix<- confusionMatrix(as.factor(testData1$feedback),predictionsFact)
+
+
+matrix$table
+
+
+##Misclassification Rate for the predictive Model
+1-sum(diag(matrix$table)/sum(matrix$table))
+```
+
+
+**Test Data 2**
+
+```{r}
+## This experiment is for test data 2
+
+testDataPredictions<-as.data.frame(predict(model, (finalTestMouseData %>% filter(session == 2))))
+predictionsFact<- as.factor(ifelse(testDataPredictions>0.5,1,-1))
+
+
+predictionsFact
+
+testData2 <-finalTestMouseData %>%  filter(session == 2)
+
+
+matrix<- confusionMatrix(as.factor(testData2$feedback_type),predictionsFact)
+
+
+matrix$table
+
+
+##Misclassification Rate for the predictive Model
+1-sum(diag(matrix$table)/sum(matrix$table))
+
+
+```
+
+
+The results revealed that the model performed well, achieving an accuracy rate of 74% on the first test session and 72% on the second test session. These findings indicate that the model is capable of effectively predicting the feedback type, demonstrating its robustness and generalization across different data sets
+ 
+
+Although my model has shown accurate predictions for the spikes in the given data, it is important to note that this performance is limited to the specific session data used for training and testing. Generalization to other independent sessions may require additional information or further refinement of the model. It is crucial to consider the potential limitations and the need for validation on diverse data sets to ensure the reliability and applicability of the predictive model beyond the current experiment.
+
+
+
+
+# Discussion
+
+In this project, I conducted an analysis of a subset of data collected by Steinmetz et al. (2019). My primary objective was to build a predictive model to determine the feedback type of each trial using neural activity data and stimulus contrast levels.
+
+In Section 1, I explored the general information about the mouse data and converted the sessions into a dataframe for easier access. Additionally, I examined the spike data per trial but decided not to combine it with the general mouse data due to differences in dimensions until after.
+
+In Section 2, I visualized the spike activity per session, grouping the total number of spikes in each trial and displaying them through line graphs. This provided insights into the ranges and variations in spike counts across trials. I observed that spike trends were similar across sessions, although some sessions had higher total spikes, potentially due to differences in mice or brain areas. I also ventured into the metrics of mouse feedback effectiveness, measuring the proportions of success to failures across each mouse.
+
+In Section 3, I explored the spike activity per brain area, selecting arbitrary sessions to analyze trends and variations. This helped me understand the distribution and quantity of distinct brain areas being measured.
+
+Based on my analysis, I observed that a significant portion of trials had contrast levels of (0, 0), indicating the absence of stimuli. Interestingly, within this contrast level, there were more instances of success than failure, suggesting that the mice were able to distinguish when to withhold wheel movement when no stimuli were present.
+
+I proceeded to use logistic regression as my predictive model in Section 4 due to its suitability for binary classification tasks. By training the model on the available data, I achieved an accuracy rate of 74% in predicting the feedback type for new trials. This indicates that the model is fairly effective in predicting the outcome based on the neural activity and contrast levels.
+
+However, it is important to note that the generalization of the model's performance may be limited. Since the testing was conducted on the same session data as the training, it might not accurately reflect the model's performance on independent sessions. Additionally, further investigation and inclusion of additional information may be necessary to improve the model's generalization ability and capture more nuanced patterns in the data.
+
+In summary, this project provides insights into the spike activity, contrast levels, and predictive modeling in the analyzed subset of data. The findings highlight the potential relationship between stimulus contrast and feedback type, and demonstrate the effectiveness of logistic regression in predicting trial outcomes. However, future work should focus on validating the model on independent sessions and exploring additional factors that may influence the predictions.
+
+
+
+
+
+
+
+
+
+## Reference {-}
+
+Steinmetz, N.A., Zatka-Haas, P., Carandini, M. et al. Distributed coding of choice, action and engagement across the mouse brain. Nature 576, 266–273 (2019). https://doi.org/10.1038/s41586-019-1787-x
+
+### Code Used
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+
+```
+
+
+## Session information {-}
+```{r}
+sessionInfo()
+```
+
+
